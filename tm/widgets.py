@@ -317,23 +317,14 @@ class BoardColumn(Frame):
                         card = TaskCard(self.inner, self.app, task)
                         card._state = t_state
                         self.cards[tid] = card
-                        card.pack(fill="x", pady=10)
                 else:
                     card = TaskCard(self.inner, self.app, task)
                     card._state = t_state
                     self.cards[tid] = card
-                    card.pack(fill="x", pady=10)
 
+                card.pack_forget()
+                card.pack(fill="x", pady=10)
                 self._bind_wheel(card)
-
-            current_slaves = [w for w in self.inner.winfo_children() if isinstance(w, TaskCard)]
-            current_ids = [w.task["id"] for w in current_slaves if hasattr(w, "task")]
-
-            if current_ids != new_ids:
-                for tid in new_ids:
-                    card = self.cards[tid]
-                    card.pack_forget()
-                    card.pack(fill="x", pady=10)
 
         self.inner.update_idletasks()
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
