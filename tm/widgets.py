@@ -108,13 +108,11 @@ class TaskCard(Frame):
 
         for widget in (self, body, title):
             widget.bind("<Button-3>", on_right_click)
-            widget.bind("<Double-Button-1>", lambda e: app.edit_task(task))
             widget.bind("<ButtonPress-1>", self._dnd_start)
             widget.bind("<ButtonRelease-1>", self._dnd_end)
             widget.bind("<B1-Motion>", self._dnd_move)
         for widget in body.winfo_children():
             widget.bind("<Button-3>", on_right_click)
-            widget.bind("<Double-Button-1>", lambda e: app.edit_task(task))
             if not isinstance(widget, Button):
                 widget.bind("<ButtonPress-1>", self._dnd_start)
                 widget.bind("<ButtonRelease-1>", self._dnd_end)
