@@ -123,8 +123,6 @@ class TaskCard(Frame):
             return
         self.app._drag = self
         self._dnd_index = self.master.winfo_children().index(self)
-        self._current_hover_column = None
-        self._card_height = self.winfo_height() or 60
         self.pack_forget()
 
         done = self.task["status"] == "Готово"
@@ -177,64 +175,6 @@ class TaskCard(Frame):
         over_trash = self._is_over_trash(event)
         self.app.set_trash_active(over_trash)
 
-        if over_trash:
-            prev_col = getattr(drag, "_current_hover_column", None)
-            if prev_col is not None:
-                drag._current_hover_column = None
-                if hasattr(drag, "_placeholder") and drag._placeholder.winfo_exists():
-                    drag._placeholder.destroy()
-                cards = [w for w in prev_col.inner.winfo_children() if isinstance(w, TaskCard)]
-                for c in cards:
-                    c.pack_forget()
-                    c.pack(fill="x", pady=10)
-            return
-
-        column = self.app._column_at(event.x_root, event.y_root)
-        if column is not None:
-            prev_col = getattr(drag, "_current_hover_column", None)
-            if prev_col is not None and prev_col != column:
-                if hasattr(drag, "_placeholder") and drag._placeholder.winfo_exists():
-                    drag._placeholder.destroy()
-                prev_cards = [w for w in prev_col.inner.winfo_children() if isinstance(w, TaskCard)]
-                for c in prev_cards:
-                    c.pack_forget()
-                    c.pack(fill="x", pady=10)
-
-            drag._current_hover_column = column
-            cards = [w for w in column.inner.winfo_children() if isinstance(w, TaskCard)]
-            target_index = len(cards)
-            for i, card in enumerate(cards):
-                y1 = card.winfo_rooty()
-                h = card.winfo_height()
-                mid = y1 + h / 2
-                if event.y_root < mid:
-                    target_index = i
-                    break
-
-            if not hasattr(drag, "_placeholder") or not drag._placeholder.winfo_exists() or drag._placeholder.master != column.inner:
-                if hasattr(drag, "_placeholder") and drag._placeholder.winfo_exists():
-                    drag._placeholder.destroy()
-                ph = Frame(column.inner, bg=COLUMN_BG, bd=1, highlightbackground=ACCENT, highlightthickness=2)
-                ph.configure(height=getattr(drag, "_card_height", 60))
-                ph.pack_propagate(False)
-                drag._placeholder = ph
-
-            items = cards.copy()
-            items.insert(target_index, drag._placeholder)
-            for item in items:
-                item.pack_forget()
-                item.pack(fill="x", pady=10)
-        else:
-            prev_col = getattr(drag, "_current_hover_column", None)
-            if prev_col is not None:
-                drag._current_hover_column = None
-                if hasattr(drag, "_placeholder") and drag._placeholder.winfo_exists():
-                    drag._placeholder.destroy()
-                cards = [w for w in prev_col.inner.winfo_children() if isinstance(w, TaskCard)]
-                for c in cards:
-                    c.pack_forget()
-                    c.pack(fill="x", pady=10)
-
     def _dnd_end(self, event):
         drag = self.app._drag
         self.app._drag = None
@@ -245,9 +185,6 @@ class TaskCard(Frame):
         if ghost is not None:
             ghost.destroy()
             drag._ghost = None
-        if hasattr(drag, "_placeholder") and drag._placeholder.winfo_exists():
-            drag._placeholder.destroy()
-            delattr(drag, "_placeholder")
         drag.configure(highlightbackground=BORDER, highlightthickness=1)
         
         over_trash = self._is_over_trash(event)
@@ -267,10 +204,8 @@ class TaskCard(Frame):
                     if event.y_root < mid:
                         target_index = i
                         break
-                drag._current_hover_column = None
                 self.app.reorder_task(drag.task, column.status, target_index)
             else:
-                drag._current_hover_column = None
                 drag._restore()
 
     def _restore(self):
