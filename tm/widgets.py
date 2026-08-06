@@ -243,6 +243,19 @@ class BoardColumn(Frame):
         self.canvas.bind("<Configure>",
                          lambda e: self.canvas.itemconfigure(self._win, width=e.width))
         self.canvas.bind("<Double-Button-1>", lambda e: app.new_task(self.status))
+
+        col_menu = Menu(self, tearoff=0)
+        col_menu.add_command(label="Новая задача", command=lambda: app.new_task(status))
+        self._col_menu = col_menu
+
+        def on_column_right_click(event):
+            col_menu.tk_popup(event.x_root, event.y_root)
+            col_menu.grab_release()
+
+        self.canvas.bind("<Button-3>", on_column_right_click)
+        self.inner.bind("<Button-3>", on_column_right_click)
+        wrap.bind("<Button-3>", on_column_right_click)
+
         self._bind_wheel(self.canvas)
         self._bind_wheel(self.inner)
 
@@ -283,6 +296,7 @@ class BoardColumn(Frame):
             if not any(isinstance(w, Label) and w.cget("text") == "Нет задач" for w in self.inner.winfo_children()):
                 lbl = Label(self.inner, text="Нет задач",
                             bg=COLUMN_BG, fg=MUTED, font=self.app.font_small)
+                lbl.bind("<Button-3>", lambda e: self._col_menu.tk_popup(e.x_root, e.y_root))
                 lbl.pack(pady=24)
         else:
             for task in tasks:
