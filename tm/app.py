@@ -2,6 +2,7 @@
 """Главное окно и логика приложения."""
 
 import logging
+import json
 import os
 import subprocess
 import sys
@@ -18,10 +19,10 @@ import tkinter.ttk as ttk
 from tm.config import (
     ACCENT, APP_TITLE, BG, BORDER, CARD_BG, COLUMN_BG, DANGER, FONT_FAMILY,
     HOVER, MUTED, PID_FILE, PRIORITY_COLORS, PRIORITY_RANK, PRIORITIES,
-    STATUS_COLORS, STATUSES, TEXT, VERSION,
+    SETTINGS_FILE, STATUS_COLORS, STATUSES, TEXT, VERSION,
 )
 from tm.store import TaskStore
-from tm.widgets import BoardColumn, TagChip, TrashCan
+from tm.widgets import BoardColumn, TagChip, ToolTip, TrashCan
 from tm.utils import bind_shortcuts, tag_color, set_active_app
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ class TaskManager:
         self._scroll_fraction = 0.0
         self._resize_job = None
         self._search_job = None
+        self.copy_on_progress = self._load_settings().get("copy_on_progress", True)
 
         self.root = Tk()
         self.root.title("%s %s" % (APP_TITLE, VERSION))
@@ -161,6 +163,19 @@ class TaskManager:
                   arrowcolor=[("", MUTED)], lightcolor=[("", COLUMN_BG)],
                   darkcolor=[("", COLUMN_BG)])
 
+        style.configure("TCheckbutton", background=BG, foreground=TEXT,
+                        focuscolor=BG, bordercolor=BG, lightcolor=MUTED,
+                        darkcolor=MUTED, selectcolor=ACCENT)
+        style.map("TCheckbutton",
+                  background=[("active", HOVER)],
+                  foreground=[("active", TEXT)],
+                  indicatorcolor=[("selected", ACCENT), ("!selected", COLUMN_BG)])
+
+        style.configure("Copy.TCheckbutton", font=(FONT_FAMILY, 13), padding=6)
+        style.map("Copy.TCheckbutton",
+                  background=[("active", HOVER)],
+                  indicatorcolor=[("selected", ACCENT), ("!selected", COLUMN_BG)])
+
     def _fonts(self):
         self.font_title = tkfont.Font(family=FONT_FAMILY, size=14, weight="bold")
         self.font_done = tkfont.Font(family=FONT_FAMILY, size=14, overstrike=1)
@@ -186,6 +201,16 @@ class TaskManager:
                                            values=("Все",) + PRIORITIES, state="readonly", width=12)
         self.priority_combo.pack(side="left")
         self.priority_combo.bind("<<ComboboxSelected>>", lambda e: self.refresh())
+        self.copy_var = tk.BooleanVar(value=self.copy_on_progress)
+        copy_check = ttk.Checkbutton(toolbar, text="Копировать в «В процессе»",
+                                     variable=self.copy_var, style="Copy.TCheckbutton",
+                                     command=self._toggle_copy_on_progress)
+        copy_check.pack(side="left", padx=12)
+        ToolTip(copy_check,
+                "Перенос задачи в колонку «В процессе» автоматически копирует "
+                "её текст в буфер обмена — его можно сразу вставить (Ctrl+V) "
+                "в отчёт или заметку.\n\n"
+                "Выключите, если копирование при переносе не нужно.")
         Button(toolbar, text="Очистить фильтры", bg=COLUMN_BG, fg=TEXT,
                activebackground=HOVER, font=self.font_small, padx=10, pady=3,
                cursor="hand2", relief="flat", command=self._clear_filters).pack(side="left", padx=10)
@@ -341,6 +366,39 @@ class TaskManager:
             self.root.after_cancel(self._search_job)
         self._search_job = self.root.after(150, self.refresh)
 
+    def _load_settings(self):
+        try:
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def _save_settings(self):
+        try:
+            with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+                json.dump({"copy_on_progress": bool(self.copy_on_progress)},
+                          f, ensure_ascii=False, indent=2)
+        except OSError:
+            logger.warning("Не удалось сохранить настройки в %s", SETTINGS_FILE)
+
+    def _toggle_copy_on_progress(self):
+        self.copy_on_progress = bool(self.copy_var.get())
+        self._save_settings()
+        logger.info("Копирование при переносе в «В процессе»: %s",
+                    "включено" if self.copy_on_progress else "выключено")
+
+    def _copy_task_to_clipboard(self, task):
+        text = task.get("title", "")
+        if task.get("description"):
+            text += "\n" + task["description"]
+        if not text:
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self.root.update()
+        logger.info("Скопировано в буфер: «%s»", text[:60])
+
     def new_task(self, status=STATUSES[0]):
         from tm.dialog import TaskDialog
         logger.info("Создание новой задачи (status=%s)", status)
@@ -391,6 +449,8 @@ class TaskManager:
         logger.info("Смена статуса задачи «%s» (id=%s): %s → %s",
                     task["title"], task["id"], task["status"], status)
         task["status"] = status
+        if self.copy_on_progress and status == "В процессе":
+            self._copy_task_to_clipboard(task)
         self.store.save()
         self.refresh()
 
@@ -401,6 +461,8 @@ class TaskManager:
         
         self.store.tasks = [t for t in self.store.tasks if t["id"] != task["id"]]
         task["status"] = target_status
+        if self.copy_on_progress and target_status == "В процессе":
+            self._copy_task_to_clipboard(task)
 
         other_tasks_of_status = [t for t in self.store.tasks if t["status"] == target_status]
         

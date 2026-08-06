@@ -5,7 +5,7 @@ import os
 import sys
 
 APP_TITLE = "Task Manager"
-VERSION = "1.0"
+VERSION = "1.2"
 
 if sys.platform == "win32":
     FONT_FAMILY = "Segoe UI"
@@ -16,6 +16,7 @@ else:
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_FILE = os.path.join(BASE_DIR, "tasks.json")
+SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
 LOG_DIR = os.path.join(BASE_DIR, "logs")
 PID_FILE = os.path.join(BASE_DIR, "task_manager.pid")
 

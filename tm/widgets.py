@@ -17,6 +17,54 @@ from tm.utils import format_due, tag_color, truncate
 logger = logging.getLogger(__name__)
 
 
+class ToolTip:
+    """Всплывающая подсказка, показываемая при наведении курсора."""
+
+    DELAY_MS = 400
+
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tip = None
+        self._after_id = None
+        widget.bind("<Enter>", self._on_enter, add="+")
+        widget.bind("<Motion>", self._on_enter, add="+")
+        widget.bind("<Leave>", self._on_leave, add="+")
+
+    def _on_enter(self, event=None):
+        if self._after_id is None:
+            self._after_id = self.widget.after(self.DELAY_MS, self._show)
+
+    def _on_leave(self, event=None):
+        if self._after_id is not None:
+            self.widget.after_cancel(self._after_id)
+            self._after_id = None
+        self._hide()
+
+    def _show(self):
+        self._after_id = None
+        if self.tip is not None or not self.widget.winfo_exists():
+            return
+        tip = Toplevel(self.widget)
+        tip.overrideredirect(True)
+        tip.attributes("-topmost", True)
+        frame = Frame(tip, bg=BORDER)
+        frame.pack(fill="both", expand=True)
+        Label(frame, text=self.text, bg=CARD_BG, fg=TEXT,
+              font=(FONT_FAMILY, 10), justify="left", anchor="w",
+              padx=10, pady=8, wraplength=380).pack(fill="both", expand=True)
+        tip.update_idletasks()
+        x = self.widget.winfo_rootx()
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 6
+        tip.geometry("+%d+%d" % (x, y))
+        self.tip = tip
+
+    def _hide(self):
+        if self.tip is not None:
+            self.tip.destroy()
+            self.tip = None
+
+
 class TagChip(Label):
     """Кликабельный индикатор тега."""
 

@@ -27,6 +27,7 @@ logs/
 *.pid
 tasks.json
 tasks.json.bak
+settings.json
 *.bak
 
 # Personal QA tooling (not part of the public release)
