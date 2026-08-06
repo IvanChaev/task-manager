@@ -124,6 +124,7 @@ class TaskCard(Frame):
         self.app._drag = self
         self._dnd_index = self.master.winfo_children().index(self)
         self._current_hover_column = None
+        self._card_height = self.winfo_height() or 60
         self.pack_forget()
 
         done = self.task["status"] == "Готово"
@@ -180,7 +181,9 @@ class TaskCard(Frame):
             prev_col = getattr(drag, "_current_hover_column", None)
             if prev_col is not None:
                 drag._current_hover_column = None
-                cards = [w for w in prev_col.inner.winfo_children() if isinstance(w, TaskCard) and w != drag]
+                if hasattr(drag, "_placeholder") and drag._placeholder.winfo_exists():
+                    drag._placeholder.destroy()
+                cards = [w for w in prev_col.inner.winfo_children() if isinstance(w, TaskCard)]
                 for c in cards:
                     c.pack_forget()
                     c.pack(fill="x", pady=10)
@@ -190,13 +193,15 @@ class TaskCard(Frame):
         if column is not None:
             prev_col = getattr(drag, "_current_hover_column", None)
             if prev_col is not None and prev_col != column:
-                prev_cards = [w for w in prev_col.inner.winfo_children() if isinstance(w, TaskCard) and w != drag]
+                if hasattr(drag, "_placeholder") and drag._placeholder.winfo_exists():
+                    drag._placeholder.destroy()
+                prev_cards = [w for w in prev_col.inner.winfo_children() if isinstance(w, TaskCard)]
                 for c in prev_cards:
                     c.pack_forget()
                     c.pack(fill="x", pady=10)
 
             drag._current_hover_column = column
-            cards = [w for w in column.inner.winfo_children() if isinstance(w, TaskCard) and w != drag]
+            cards = [w for w in column.inner.winfo_children() if isinstance(w, TaskCard)]
             target_index = len(cards)
             for i, card in enumerate(cards):
                 y1 = card.winfo_rooty()
@@ -205,15 +210,27 @@ class TaskCard(Frame):
                 if event.y_root < mid:
                     target_index = i
                     break
-            cards.insert(target_index, drag)
-            for c in cards:
-                c.pack_forget()
-                c.pack(fill="x", pady=10)
+
+            if not hasattr(drag, "_placeholder") or not drag._placeholder.winfo_exists() or drag._placeholder.master != column.inner:
+                if hasattr(drag, "_placeholder") and drag._placeholder.winfo_exists():
+                    drag._placeholder.destroy()
+                ph = Frame(column.inner, bg=COLUMN_BG, bd=1, highlightbackground=ACCENT, highlightthickness=2)
+                ph.configure(height=getattr(drag, "_card_height", 60))
+                ph.pack_propagate(False)
+                drag._placeholder = ph
+
+            items = cards.copy()
+            items.insert(target_index, drag._placeholder)
+            for item in items:
+                item.pack_forget()
+                item.pack(fill="x", pady=10)
         else:
             prev_col = getattr(drag, "_current_hover_column", None)
             if prev_col is not None:
                 drag._current_hover_column = None
-                cards = [w for w in prev_col.inner.winfo_children() if isinstance(w, TaskCard) and w != drag]
+                if hasattr(drag, "_placeholder") and drag._placeholder.winfo_exists():
+                    drag._placeholder.destroy()
+                cards = [w for w in prev_col.inner.winfo_children() if isinstance(w, TaskCard)]
                 for c in cards:
                     c.pack_forget()
                     c.pack(fill="x", pady=10)
@@ -228,6 +245,9 @@ class TaskCard(Frame):
         if ghost is not None:
             ghost.destroy()
             drag._ghost = None
+        if hasattr(drag, "_placeholder") and drag._placeholder.winfo_exists():
+            drag._placeholder.destroy()
+            delattr(drag, "_placeholder")
         drag.configure(highlightbackground=BORDER, highlightthickness=1)
         
         over_trash = self._is_over_trash(event)
@@ -238,7 +258,7 @@ class TaskCard(Frame):
         else:
             column = self.app._column_at(event.x_root, event.y_root)
             if column is not None:
-                cards = [w for w in column.inner.winfo_children() if isinstance(w, TaskCard) and w != drag]
+                cards = [w for w in column.inner.winfo_children() if isinstance(w, TaskCard)]
                 target_index = len(cards)
                 for i, card in enumerate(cards):
                     y1 = card.winfo_rooty()
