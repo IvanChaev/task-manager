@@ -235,7 +235,6 @@ class TaskManager:
                 if query not in haystack:
                     continue
             result.append(task)
-        result.sort(key=lambda t: (PRIORITY_RANK[t["priority"]], t["created"]))
         return result
 
     def scroll_all(self, delta):
