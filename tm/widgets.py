@@ -194,8 +194,17 @@ class TaskCard(Frame):
                 drag._restore()
         else:
             column = self.app._column_at(event.x_root, event.y_root)
-            if column is not None and column.status != drag.task["status"]:
-                self.app.set_status(drag.task, column.status)
+            if column is not None:
+                cards = [w for w in column.inner.winfo_children() if isinstance(w, TaskCard) and w != drag]
+                target_index = len(cards)
+                for i, card in enumerate(cards):
+                    y1 = card.winfo_rooty()
+                    h = card.winfo_height()
+                    mid = y1 + h / 2
+                    if event.y_root < mid:
+                        target_index = i
+                        break
+                self.app.reorder_task(drag.task, column.status, target_index)
             else:
                 drag._restore()
 

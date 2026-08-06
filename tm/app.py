@@ -337,6 +337,31 @@ class TaskManager:
         self.store.save()
         self.refresh()
 
+    def reorder_task(self, task, target_status, target_index):
+        old_status = task["status"]
+        logger.info("Перемещение/переупорядочивание задачи «%s» (id=%s): статус %s -> %s, индекс %d",
+                    task["title"], task["id"], old_status, target_status, target_index)
+        
+        self.store.tasks = [t for t in self.store.tasks if t["id"] != task["id"]]
+        task["status"] = target_status
+
+        other_tasks_of_status = [t for t in self.store.tasks if t["status"] == target_status]
+        
+        if target_index >= len(other_tasks_of_status):
+            if other_tasks_of_status:
+                last_task = other_tasks_of_status[-1]
+                idx = self.store.tasks.index(last_task) + 1
+                self.store.tasks.insert(idx, task)
+            else:
+                self.store.tasks.append(task)
+        else:
+            target_task = other_tasks_of_status[target_index]
+            idx = self.store.tasks.index(target_task)
+            self.store.tasks.insert(idx, task)
+
+        self.store.save()
+        self.refresh()
+
     def restart_app(self):
         logger.info("Перезапуск приложения (новая сессия)")
         self.store.save()
