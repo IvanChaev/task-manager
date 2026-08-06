@@ -37,6 +37,7 @@ class TaskDialog:
         top.configure(bg=BG)
         top.resizable(False, False)
         top.transient(app.root)
+        app.register_modal(top)
 
         body = Frame(top, bg=BG, padx=16, pady=14)
         body.pack(fill="both", expand=True)
@@ -177,7 +178,8 @@ class TagManagerDialog:
         top.configure(bg=BG)
         top.resizable(False, False)
         top.transient(app.root)
-        top.geometry("440x520")
+        app.register_modal(top)
+        top.geometry("550x520")
 
         body = Frame(top, bg=BG, padx=14, pady=12)
         body.pack(fill="both", expand=True)

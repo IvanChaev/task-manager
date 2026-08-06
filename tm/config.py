@@ -2,9 +2,17 @@
 """Константы приложения: названия, версия, палитра, стили."""
 
 import os
+import sys
 
 APP_TITLE = "Task Manager"
-VERSION = "3.0.0"
+VERSION = "1.0"
+
+if sys.platform == "win32":
+    FONT_FAMILY = "Segoe UI"
+elif sys.platform == "darwin":
+    FONT_FAMILY = "Helvetica"
+else:
+    FONT_FAMILY = "DejaVu Sans"
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_FILE = os.path.join(BASE_DIR, "tasks.json")

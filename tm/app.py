@@ -16,9 +16,9 @@ from tkinter import font as tkfont
 import tkinter.ttk as ttk
 
 from tm.config import (
-    ACCENT, APP_TITLE, BG, BORDER, CARD_BG, COLUMN_BG, DANGER, HOVER, MUTED,
-    PID_FILE, PRIORITY_COLORS, PRIORITY_RANK, PRIORITIES, STATUS_COLORS,
-    STATUSES, TEXT, VERSION,
+    ACCENT, APP_TITLE, BG, BORDER, CARD_BG, COLUMN_BG, DANGER, FONT_FAMILY,
+    HOVER, MUTED, PID_FILE, PRIORITY_COLORS, PRIORITY_RANK, PRIORITIES,
+    STATUS_COLORS, STATUSES, TEXT, VERSION,
 )
 from tm.store import TaskStore
 from tm.widgets import BoardColumn, TagChip, TrashCan
@@ -62,9 +62,60 @@ class TaskManager:
 
         logger.info("TaskManager инициализирован (data_file=%s)", data_file)
 
+        self._setup_taskbar_fix()
+
         for w in self.root.winfo_children():
             bind_shortcuts(w)
         set_active_app(self)
+
+    def _setup_taskbar_fix(self):
+        self._tb_modals = []
+        self._tb_restore_scheduled = False
+        self.root.bind("<FocusIn>", self._tb_on_activate, add="+")
+
+    def register_modal(self, win):
+        if win in self._tb_modals:
+            return
+        self._tb_modals.append(win)
+        win.bind("<FocusIn>", self._tb_on_activate, add="+")
+        win.bind("<Destroy>", lambda _e, w=win: self._tb_release_modal(w), add="+")
+
+    def _tb_release_modal(self, win):
+        try:
+            self._tb_modals.remove(win)
+        except ValueError:
+            pass
+
+    def _tb_on_activate(self, _event=None):
+        if self._tb_restore_scheduled:
+            return
+        self._tb_restore_scheduled = True
+        self.root.after_idle(self._tb_restore_windows)
+
+    def _tb_restore_windows(self):
+        self._tb_restore_scheduled = False
+
+        def is_hidden(w):
+            try:
+                return w.winfo_exists() and w.state() in ("iconic", "withdrawn")
+            except tk.TclError:
+                return False
+
+        restored = False
+        for win in [self.root] + list(getattr(self, "_tb_modals", [])):
+            try:
+                if is_hidden(win):
+                    win.deiconify()
+                    restored = True
+            except tk.TclError:
+                pass
+
+        if restored:
+            try:
+                self.root.lift()
+                self.root.focus_force()
+            except tk.TclError:
+                pass
 
     def _apply_dark_theme(self):
         self.root.option_add("*Entry.background", COLUMN_BG)
@@ -111,14 +162,13 @@ class TaskManager:
                   darkcolor=[("", COLUMN_BG)])
 
     def _fonts(self):
-        family = "Segoe UI"
-        self.font_title = tkfont.Font(family=family, size=14, weight="bold")
-        self.font_done = tkfont.Font(family=family, size=14, overstrike=1)
-        self.font_mid = tkfont.Font(family=family, size=12)
-        self.font_small = tkfont.Font(family=family, size=11)
-        self.font_tiny = tkfont.Font(family=family, size=10)
-        self.font_tag = tkfont.Font(family=family, size=12)
-        self.font_card_btn = tkfont.Font(family=family, size=13)
+        self.font_title = tkfont.Font(family=FONT_FAMILY, size=14, weight="bold")
+        self.font_done = tkfont.Font(family=FONT_FAMILY, size=14, overstrike=1)
+        self.font_mid = tkfont.Font(family=FONT_FAMILY, size=12)
+        self.font_small = tkfont.Font(family=FONT_FAMILY, size=11)
+        self.font_tiny = tkfont.Font(family=FONT_FAMILY, size=10)
+        self.font_tag = tkfont.Font(family=FONT_FAMILY, size=12)
+        self.font_card_btn = tkfont.Font(family=FONT_FAMILY, size=13)
 
     def _build_ui(self):
         toolbar = Frame(self.root, bg=BG, padx=14, pady=12)
@@ -238,19 +288,25 @@ class TaskManager:
         return result
 
     def scroll_all(self, delta):
+        ranges = {}
         max_scroll = 0
         for col in self.columns:
             box = col.canvas.bbox("all")
             if box is None:
+                ranges[col] = (0, 1)
                 continue
-            max_scroll = max(max_scroll, box[3] - col.canvas.winfo_height())
+            h = max(1, box[3] - box[1])
+            r = max(0, h - col.canvas.winfo_height())
+            ranges[col] = (r, h)
+            max_scroll = max(max_scroll, r)
         if max_scroll <= 0:
             return
         step = 60
         self._scroll_fraction += (-delta / 120) * step / max_scroll
         self._scroll_fraction = max(0.0, min(1.0, self._scroll_fraction))
         for col in self.columns:
-            col.canvas.yview_moveto(self._scroll_fraction)
+            r, h = ranges[col]
+            col.canvas.yview_moveto(self._scroll_fraction * r / h)
 
     def refresh(self):
         width = max(220, (self.root.winfo_width() - 90) // 3 - 44)
@@ -259,6 +315,7 @@ class TaskManager:
         self._scroll_fraction = 0.0
         for col in self.columns:
             col.render(self._visible_tasks(col.status))
+            col.canvas.yview_moveto(0)
         total = len(self.store.tasks)
         done = sum(1 for t in self.store.tasks if t["status"] == "Готово")
         percent = int(done / total * 100) if total else 0
@@ -319,12 +376,13 @@ class TaskManager:
         logger.info("Удалена задача (id=%s)", task["id"])
         return True
 
-    def _column_at(self, x_root, y_root):
-        widget = self.root.winfo_containing(x_root, y_root)
-        while widget is not None:
-            if isinstance(widget, BoardColumn):
-                return widget
-            widget = getattr(widget, "master", None)
+    def _column_at_xy(self, x_root, y_root):
+        for col in self.columns:
+            x1 = col.winfo_rootx()
+            if x1 - 4 <= x_root <= x1 + col.winfo_width() + 4:
+                y1 = col.winfo_rooty()
+                if y1 <= y_root <= y1 + col.winfo_height():
+                    return col
         return None
 
     def set_status(self, task, status):
@@ -361,6 +419,28 @@ class TaskManager:
         self.store.save()
         self.refresh()
 
+    def move_task(self, task, delta):
+        """Перемещает задачу внутри колонки: delta -1 вверх, +1 вниз."""
+        same = [t for t in self.store.tasks if t["status"] == task["status"]]
+        i = next(idx for idx, t in enumerate(same) if t is task)
+        j = i + delta
+        if not (0 <= j < len(same)):
+            return
+        other = same[j]
+        swapped = []
+        for t in self.store.tasks:
+            if t is task:
+                swapped.append(other)
+            elif t is other:
+                swapped.append(task)
+            else:
+                swapped.append(t)
+        self.store.tasks = swapped
+        logger.info("Сортировка «%s» (id=%s): %s -> %s",
+                    task["title"], task["id"], i, j)
+        self.store.save()
+        self.refresh()
+
     def restart_app(self):
         logger.info("Перезапуск приложения (новая сессия)")
         self.store.save()
@@ -378,8 +458,12 @@ class TaskManager:
                 python = pythonw
 
         script_path = os.path.abspath(sys.argv[0])
-        subprocess.Popen([python, script_path] + sys.argv[1:],
-                         creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
+        if os.name == "nt":
+            popen_kwargs = {"creationflags": subprocess.DETACHED_PROCESS
+                            | subprocess.CREATE_NEW_PROCESS_GROUP}
+        else:
+            popen_kwargs = {"start_new_session": True}
+        subprocess.Popen([python, script_path] + sys.argv[1:], **popen_kwargs)
         
         self.root.destroy()
         sys.exit(0)

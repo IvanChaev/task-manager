@@ -26,6 +26,15 @@ MANIFEST
 logs/
 *.pid
 tasks.json
+tasks.json.bak
+*.bak
+
+# Personal QA tooling (not part of the public release)
+tests/
+send_screenshots.bat
+
+# Secrets (API keys)
+.env
 
 # IDEs and Editors
 .idea/

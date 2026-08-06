@@ -9,7 +9,7 @@ from tkinter import (
 )
 
 from tm.config import (
-    ACCENT, BG, BORDER, CARD_BG, COLUMN_BG, DANGER, HOVER, MUTED,
+    ACCENT, BG, BORDER, CARD_BG, COLUMN_BG, DANGER, FONT_FAMILY, HOVER, MUTED,
     PRIORITY_COLORS, STATUS_COLORS, STATUSES, TEXT,
 )
 from tm.utils import format_due, tag_color, truncate
@@ -51,6 +51,20 @@ class TaskCard(Frame):
         done = task["status"] == "Готово"
 
         Frame(self, bg=PRIORITY_COLORS[task["priority"]], width=5).pack(side="left", fill="y")
+
+        btn_col = Frame(self, bg=CARD_BG)
+        btn_col.pack(side="right", fill="y", padx=(2, 6), pady=6)
+
+        self.btn_up = Button(btn_col, text="▲", font=app.font_tiny, bg=COLUMN_BG,
+                             fg=MUTED, activebackground=HOVER, activeforeground=TEXT,
+                             relief="flat", bd=0, padx=2, pady=0, cursor="hand2",
+                             command=lambda: app.move_task(task, -1))
+        self.btn_up.pack(side="top", fill="x", pady=(0, 2))
+        self.btn_down = Button(btn_col, text="▼", font=app.font_tiny, bg=COLUMN_BG,
+                               fg=MUTED, activebackground=HOVER, activeforeground=TEXT,
+                               relief="flat", bd=0, padx=2, pady=0, cursor="hand2",
+                               command=lambda: app.move_task(task, 1))
+        self.btn_down.pack(side="top", fill="x")
 
         body = Frame(self, bg=CARD_BG)
         body.pack(side="left", fill="both", expand=True, padx=8, pady=6)
@@ -122,7 +136,7 @@ class TaskCard(Frame):
         if self.app._drag is not None:
             return
         self.app._drag = self
-        self._dnd_index = self.master.winfo_children().index(self)
+        self._dnd_index = self.master.pack_slaves().index(self)
         self.pack_forget()
 
         done = self.task["status"] == "Готово"
@@ -140,18 +154,17 @@ class TaskCard(Frame):
         gbody = Frame(card_container, bg=CARD_BG, padx=10, pady=8)
         gbody.pack(side="left", fill="both", expand=True)
         Label(gbody, text=self.task["title"], font=self.app.font_title,
-              bg=CARD_BG, fg=MUTED if done else TEXT, anchor="w").pack(fill="x")
+              bg=CARD_BG, fg=MUTED if done else TEXT, anchor="w",
+              wraplength=self.app.card_wrap).pack(fill="x")
         if self.task["description"]:
             Label(gbody, text=truncate(self.task["description"], 120),
                   font=self.app.font_small, bg=CARD_BG, fg=MUTED,
-                  anchor="w").pack(fill="x", pady=2)
+                  anchor="w", wraplength=self.app.card_wrap).pack(fill="x", pady=2)
         ghost.update_idletasks()
         self._ghost = ghost
-        self._ghost_dx = 0
-        self._ghost_dy = 0
         self._dnd_move(event)
 
-    def _is_over_trash(self, event):
+    def _over_trash_point(self, x_root, y_root):
         if not hasattr(self.app, "trash_can") or not self.app.trash_can.winfo_exists():
             return False
         tc = self.app.trash_can
@@ -159,7 +172,10 @@ class TaskCard(Frame):
         y1 = tc.winfo_rooty()
         x2 = x1 + tc.winfo_width()
         y2 = y1 + tc.winfo_height()
-        return x1 <= event.x_root <= x2 and y1 <= event.y_root <= y2
+        return x1 <= x_root <= x2 and y1 <= y_root <= y2
+
+    def _is_over_trash(self, event):
+        return self._over_trash_point(event.x_root, event.y_root)
 
     def _dnd_move(self, event):
         drag = self.app._drag
@@ -168,12 +184,10 @@ class TaskCard(Frame):
         ghost = getattr(drag, "_ghost", None)
         if ghost is None:
             return
-        x = event.x_root - drag._ghost_dx
-        y = event.y_root - drag._ghost_dy
+        x = event.x_root - ghost.winfo_width() // 2
+        y = event.y_root - ghost.winfo_height() // 2
         ghost.geometry(f"+{x}+{y}")
-
-        over_trash = self._is_over_trash(event)
-        self.app.set_trash_active(over_trash)
+        self.app.set_trash_active(self._is_over_trash(event))
 
     def _dnd_end(self, event):
         drag = self.app._drag
@@ -186,30 +200,24 @@ class TaskCard(Frame):
             ghost.destroy()
             drag._ghost = None
         drag.configure(highlightbackground=BORDER, highlightthickness=1)
-        
-        over_trash = self._is_over_trash(event)
-        if over_trash:
-            deleted = self.app.delete_task(drag.task)
-            if not deleted:
+
+        if self._is_over_trash(event):
+            if not self.app.delete_task(drag.task):
                 drag._restore()
         else:
-            column = self.app._column_at(event.x_root, event.y_root)
-            if column is not None:
-                cards = [w for w in column.inner.winfo_children() if isinstance(w, TaskCard)]
-                target_index = len(cards)
-                for i, card in enumerate(cards):
-                    y1 = card.winfo_rooty()
-                    h = card.winfo_height()
-                    mid = y1 + h / 2
-                    if event.y_root < mid:
-                        target_index = i
-                        break
-                self.app.reorder_task(drag.task, column.status, target_index)
+            column = self.app._column_at_xy(event.x_root, event.y_root)
+            if column is not None and column.status != drag.task["status"]:
+                self.app.reorder_task(drag.task, column.status, len(self.app.store.tasks))
             else:
                 drag._restore()
 
     def _restore(self):
-        self.app.refresh()
+        before = None
+        slaves = self.master.pack_slaves()
+        idx = getattr(self, "_dnd_index", len(slaves))
+        if idx < len(slaves):
+            before = slaves[idx]
+        self.pack(fill="x", pady=10, before=before)
 
 
 class BoardColumn(Frame):
@@ -302,7 +310,8 @@ class BoardColumn(Frame):
                 lbl.bind("<Button-3>", lambda e: self._col_menu.tk_popup(e.x_root, e.y_root))
                 lbl.pack(pady=24)
         else:
-            for task in tasks:
+            total = len(tasks)
+            for i, task in enumerate(tasks):
                 tid = task["id"]
                 t_state = task_states[tid]
 
@@ -320,6 +329,8 @@ class BoardColumn(Frame):
 
                 card.pack_forget()
                 card.pack(fill="x", pady=10)
+                card.btn_up.configure(state="disabled" if i == 0 else "normal")
+                card.btn_down.configure(state="disabled" if i == total - 1 else "normal")
                 self._bind_wheel(card)
 
         self.inner.update_idletasks()
@@ -336,7 +347,7 @@ class TrashCan(Frame):
         self.app = app
         self.active = False
 
-        self.lbl = Label(self, text="🗑", bg=CARD_BG, fg=MUTED, font=("Segoe UI", 24))
+        self.lbl = Label(self, text="🗑", bg=CARD_BG, fg=MUTED, font=(FONT_FAMILY, 24))
         self.lbl.pack()
 
     def set_active(self, active):
@@ -345,7 +356,7 @@ class TrashCan(Frame):
         self.active = active
         if active:
             self.configure(bg="#dc2626", highlightbackground="#ef4444")
-            self.lbl.configure(text="🗑", bg="#dc2626", fg="white", font=("Segoe UI", 32))
+            self.lbl.configure(text="🗑", bg="#dc2626", fg="white", font=(FONT_FAMILY, 32))
         else:
             self.configure(bg=CARD_BG, highlightbackground=BORDER)
-            self.lbl.configure(text="🗑", bg=CARD_BG, fg=MUTED, font=("Segoe UI", 24))
+            self.lbl.configure(text="🗑", bg=CARD_BG, fg=MUTED, font=(FONT_FAMILY, 24))
