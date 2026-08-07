@@ -45,18 +45,53 @@ class ToolTip:
         self._after_id = None
         if self.tip is not None or not self.widget.winfo_exists():
             return
+
         tip = Toplevel(self.widget)
         tip.overrideredirect(True)
         tip.attributes("-topmost", True)
+
         frame = Frame(tip, bg=BORDER)
         frame.pack(fill="both", expand=True)
-        Label(frame, text=self.text, bg=CARD_BG, fg=TEXT,
-              font=(FONT_FAMILY, 10), justify="left", anchor="w",
-              padx=10, pady=8, wraplength=380).pack(fill="both", expand=True)
+
+        Label(
+            frame,
+            text=self.text,
+            bg=CARD_BG,
+            fg=TEXT,
+            font=(FONT_FAMILY, 10),
+            justify="left",
+            anchor="w",
+            padx=10,
+            pady=8,
+            wraplength=380,
+        ).pack(fill="both", expand=True)
+
         tip.update_idletasks()
+
+        margin = 8
+        offset = 6
+        req_w = tip.winfo_reqwidth()
+        req_h = tip.winfo_reqheight()
+        screen_w = self.widget.winfo_screenwidth()
+        screen_h = self.widget.winfo_screenheight()
+
         x = self.widget.winfo_rootx()
-        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 6
-        tip.geometry("+%d+%d" % (x, y))
+        y_below = self.widget.winfo_rooty() + self.widget.winfo_height() + offset
+        y_above = self.widget.winfo_rooty() - req_h - offset
+
+        if y_below + req_h <= screen_h:
+            y = y_below
+        elif y_above >= 0:
+            y = y_above
+        else:
+            y = max(margin, screen_h - req_h - margin)
+
+        if x + req_w > screen_w:
+            x = screen_w - req_w - margin
+        if x < margin:
+            x = margin
+
+        tip.geometry("+%d+%d" % (int(x), int(y)))
         self.tip = tip
 
     def _hide(self):
@@ -106,12 +141,12 @@ class TaskCard(Frame):
         self.btn_up = Button(btn_col, text="▲", font=app.font_tiny, bg=COLUMN_BG,
                              fg=MUTED, activebackground=HOVER, activeforeground=TEXT,
                              relief="flat", bd=0, padx=2, pady=0, cursor="hand2",
-                             command=lambda: app.move_task(task, -1))
+                             command=lambda: app.move_task(task, -1, self.btn_up))
         self.btn_up.pack(side="top", fill="x", pady=(0, 2))
         self.btn_down = Button(btn_col, text="▼", font=app.font_tiny, bg=COLUMN_BG,
                                fg=MUTED, activebackground=HOVER, activeforeground=TEXT,
                                relief="flat", bd=0, padx=2, pady=0, cursor="hand2",
-                               command=lambda: app.move_task(task, 1))
+                               command=lambda: app.move_task(task, 1, self.btn_down))
         self.btn_down.pack(side="top", fill="x")
 
         body = Frame(self, bg=CARD_BG)
@@ -377,6 +412,7 @@ class BoardColumn(Frame):
 
                 card.pack_forget()
                 card.pack(fill="x", pady=10)
+                card._column = self
                 card.btn_up.configure(state="disabled" if i == 0 else "normal")
                 card.btn_down.configure(state="disabled" if i == total - 1 else "normal")
                 self._bind_wheel(card)
@@ -397,6 +433,13 @@ class TrashCan(Frame):
 
         self.lbl = Label(self, text="🗑", bg=CARD_BG, fg=MUTED, font=(FONT_FAMILY, 24))
         self.lbl.pack()
+
+        tip_text = (
+            "Корзина — удаление задачи.\n"
+            "Перетащите сюда карточку задачи левой кнопкой мыши, "
+            "чтобы безвозвратно удалить её."
+        )
+        ToolTip(self, tip_text)
 
     def set_active(self, active):
         if self.active == active:

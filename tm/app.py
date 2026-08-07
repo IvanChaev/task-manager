@@ -333,14 +333,16 @@ class TaskManager:
             r, h = ranges[col]
             col.canvas.yview_moveto(self._scroll_fraction * r / h)
 
-    def refresh(self):
+    def refresh(self, keep_scroll=False):
         width = max(220, (self.root.winfo_width() - 90) // 3 - 44)
         self.card_wrap = width
         self._rebuild_tagbar()
-        self._scroll_fraction = 0.0
+        if not keep_scroll:
+            self._scroll_fraction = 0.0
         for col in self.columns:
             col.render(self._visible_tasks(col.status))
-            col.canvas.yview_moveto(0)
+            if not keep_scroll:
+                col.canvas.yview_moveto(0)
         total = len(self.store.tasks)
         done = sum(1 for t in self.store.tasks if t["status"] == "Готово")
         percent = int(done / total * 100) if total else 0
@@ -481,8 +483,13 @@ class TaskManager:
         self.store.save()
         self.refresh()
 
-    def move_task(self, task, delta):
-        """Перемещает задачу внутри колонки: delta -1 вверх, +1 вниз."""
+    def move_task(self, task, delta, button=None):
+        """Перемещает задачу внутри колонки: delta -1 вверх, +1 вниз.
+
+        button — нажатая стрелка (▲/▼). После перерисовки колонки курсор
+        телепортируется на ту же самую кнопку, чтобы задачу можно было
+        перемещать на несколько позиций подряд без движений мыши.
+        """
         same = [t for t in self.store.tasks if t["status"] == task["status"]]
         i = next(idx for idx, t in enumerate(same) if t is task)
         j = i + delta
@@ -501,7 +508,73 @@ class TaskManager:
         logger.info("Сортировка «%s» (id=%s): %s -> %s",
                     task["title"], task["id"], i, j)
         self.store.save()
-        self.refresh()
+        self.refresh(keep_scroll=True)
+
+        if button is not None and button.winfo_exists():
+            self.root.after_idle(lambda: self._keep_cursor_on_button(button))
+
+    def _column_of_button(self, button):
+        try:
+            card = button.master.master
+        except (tk.TclError, AttributeError):
+            return None
+        return getattr(card, "_column", None)
+
+    def _keep_cursor_on_button(self, button):
+        """Возвращает курсор на ту же кнопку после перерисовки колонки."""
+        if not (button and button.winfo_exists()):
+            return
+
+        self._reveal_button(button)
+
+        try:
+            button.update_idletasks()
+        except tk.TclError:
+            return
+
+        self._teleport_cursor(button)
+
+    def _reveal_button(self, button):
+        """Прокручивает колонку так, чтобы кнопка попала в видимую область."""
+        col = self._column_of_button(button)
+        if col is None:
+            return
+
+        try:
+            box = col.canvas.bbox("all")
+            if box is None:
+                return
+        except tk.TclError:
+            return
+
+        content_h = max(0, box[3] - box[1])
+        viewport_h = col.canvas.winfo_height()
+
+        if content_h <= viewport_h:
+            return
+
+        rel_y = button.winfo_rooty() - col.canvas.winfo_rooty() + button.winfo_height() // 2
+
+        try:
+            center_y = col.canvas.canvasy(rel_y)
+        except tk.TclError:
+            return
+
+        top = (center_y - box[1] - viewport_h / 2) / max(1, content_h - viewport_h)
+        col.canvas.yview_moveto(max(0.0, min(1.0, top)))
+
+    def _teleport_cursor(self, widget):
+        """Телепортирует курсор мыши в центр виджета (только Windows)."""
+        if os.name != "nt":
+            return
+
+        try:
+            import ctypes
+            x = widget.winfo_rootx() + widget.winfo_width() // 2
+            y = widget.winfo_rooty() + widget.winfo_height() // 2
+            ctypes.windll.user32.SetCursorPos(int(x), int(y))
+        except Exception:
+            logger.debug("Не удалось телепортировать курсор", exc_info=True)
 
     def restart_app(self):
         logger.info("Перезапуск приложения (новая сессия)")
