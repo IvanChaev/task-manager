@@ -60,7 +60,7 @@
 ## 🚀 Установка и запуск
 
 **Простая:**
-1) Нажать [сюда](https://github.com/IvanChaev/task-manager/archive/refs/tags/v1.2.zip)
+1) Нажать [сюда](https://github.com/IvanChaev/task-manager/archive/refs/tags/v1.3.zip)
 2) Распаковать архив в удобное место
 3) Запустить start.bat
 
