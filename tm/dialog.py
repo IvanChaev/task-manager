@@ -47,16 +47,29 @@ class TaskDialog:
                   font=app.font_small, anchor="w").pack(fill="x", pady=6)
 
         field_label("Название")
-        self.title_var = StringVar(value=task["title"] if task else "")
-        Entry(body, textvariable=self.title_var, width=46,
-              font=app.font_mid).pack(fill="x")
+        self.title_text = Text(body, width=58, height=5, wrap="word",
+                               font=app.font_mid, relief="solid", bd=1)
+        self.title_text.pack(fill="x")
+        if task and task["title"]:
+            self.title_text.insert("1.0", task["title"])
+        self.title_text.bind("<Return>", lambda e: (self._save(), "break")[1])
 
         field_label("Описание")
-        self.desc_text = Text(body, width=46, height=5, wrap="word",
-                              font=app.font_mid, relief="solid", bd=1)
+        self.desc_text = Text(body, width=58, height=5, wrap="word",
+                               font=app.font_mid, relief="solid", bd=1)
         self.desc_text.pack(fill="x")
         if task and task["description"]:
             self.desc_text.insert("1.0", task["description"])
+
+        def _insert_newline(event):
+            event.widget.insert(tk.INSERT, "\n")
+            return "break"
+
+        for w_txt in (self.title_text, self.desc_text):
+            w_txt.bind("<Control-Return>", _insert_newline)
+            w_txt.bind("<Control-KP_Enter>", _insert_newline)
+            w_txt.bind("<Shift-Return>", _insert_newline)
+            w_txt.bind("<Shift-KP_Enter>", _insert_newline)
 
         field_label("Приоритет")
         prio = Frame(body, bg=BG)
@@ -79,7 +92,7 @@ class TaskDialog:
         Entry(row, textvariable=self.due_var, width=14, font=app.font_mid).pack(side="left", padx=6)
 
         field_label("Теги (через запятую или кликом по готовым)")
-        self.tag_entry = Entry(body, width=46, font=app.font_mid)
+        self.tag_entry = Entry(body, width=58, font=app.font_mid)
         self.tag_entry.pack(fill="x")
         if task and task["tags"]:
             self.tag_entry.insert(0, ", ".join(task["tags"]))
@@ -87,11 +100,64 @@ class TaskDialog:
         chips = Frame(body, bg=BG)
         chips.pack(fill="x", pady=6)
         existing = task["tags"] if task else []
-        for tag in app.store.all_tags():
-            if tag not in existing:
-                chip = TagChip(chips, tag, self._toggle_chip, app.font_small)
-                chip.pack(side="left", padx=5, pady=2)
-                self.tag_chips.append(chip)
+        all_tags = app.store.all_tags()
+
+        if all_tags:
+            top.update_idletasks()
+            avail_width = max(self.tag_entry.winfo_reqwidth(), 520)
+
+            spacing = 6
+            tag_widths = {}
+            for tag in all_tags:
+                is_active = tag in existing
+                dummy = TagChip(chips, tag, lambda e: None, app.font_small, active=is_active)
+                tag_widths[tag] = dummy.winfo_reqwidth()
+                dummy.destroy()
+
+            remaining = list(all_tags)
+            rows = []
+
+            while remaining:
+                current_row = []
+                current_width = 0
+                next_remaining = []
+
+                for tag in remaining:
+                    w = tag_widths[tag]
+                    item_width = w + spacing if current_row else w
+                    if current_width + item_width <= avail_width:
+                        current_row.append(tag)
+                        current_width += item_width
+                    else:
+                        next_remaining.append(tag)
+
+                if current_row:
+                    still_next = []
+                    for tag in next_remaining:
+                        w = tag_widths[tag]
+                        item_width = w + spacing if current_row else w
+                        if current_width + item_width <= avail_width:
+                            current_row.append(tag)
+                            current_width += item_width
+                        else:
+                            still_next.append(tag)
+                    next_remaining = still_next
+
+                if not current_row:
+                    current_row.append(remaining[0])
+                    next_remaining = remaining[1:]
+
+                rows.append(current_row)
+                remaining = next_remaining
+
+            for row_items in rows:
+                row_frame = Frame(chips, bg=BG)
+                row_frame.pack(anchor="w", fill="x", pady=2)
+                for tag in row_items:
+                    is_active = tag in existing
+                    chip = TagChip(row_frame, tag, self._toggle_chip, app.font_small, active=is_active)
+                    chip.pack(side="left", padx=(0, spacing), pady=2)
+                    self.tag_chips.append(chip)
 
         buttons = Frame(body, bg=BG)
         buttons.pack(fill="x", pady=16)
@@ -110,7 +176,7 @@ class TaskDialog:
         bind_shortcuts(top)
         top.grab_set()
         top.focus_force()
-        self.title_entry = None
+        self.title_text.focus_set()
 
     def _center(self):
         self.top.update_idletasks()
@@ -133,7 +199,7 @@ class TaskDialog:
         self.tag_entry.icursor("end")
 
     def _save(self):
-        title = self.title_var.get().strip()
+        title = self.title_text.get("1.0", "end").strip()
         if not title:
             messagebox.showerror("Ошибка", "Название задачи не может быть пустым", parent=self.top)
             return

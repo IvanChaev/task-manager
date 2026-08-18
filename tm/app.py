@@ -10,7 +10,7 @@ import time
 import uuid
 
 from tkinter import (
-    Tk, Frame, Label, Entry, Button, StringVar, Menu, messagebox,
+    Tk, Frame, Label, Entry, Button, StringVar, Menu, messagebox, Canvas,
 )
 import tkinter as tk
 from tkinter import font as tkfont
@@ -43,8 +43,8 @@ class TaskManager:
 
         self.root = Tk()
         self.root.title("%s %s" % (APP_TITLE, VERSION))
-        self.root.geometry("1240x760")
-        self.root.minsize(960, 560)
+        self.root.geometry("1302x760")
+        self.root.minsize(1008, 560)
         self.root.configure(bg=BG)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -225,6 +225,23 @@ class TaskManager:
         self.tagbar = Frame(self.root, bg=BG, padx=14)
         self.tagbar.pack(fill="x", pady=4)
 
+        self.tag_canvas = Canvas(self.tagbar, bg=BG, highlightthickness=0, height=36)
+        self.tag_inner = Frame(self.tag_canvas, bg=BG)
+        self._tag_win = self.tag_canvas.create_window((0, 0), window=self.tag_inner, anchor="nw")
+
+        self.tag_inner.bind("<Configure>",
+                            lambda e: self.tag_canvas.configure(scrollregion=self.tag_canvas.bbox("all")))
+        self.tag_canvas.bind("<Configure>",
+                         lambda e: self.tag_canvas.itemconfigure(self._tag_win, height=e.height))
+
+        def _on_tag_wheel(event):
+            if self.tag_inner.winfo_reqwidth() > self.tag_canvas.winfo_width():
+                self.tag_canvas.xview_scroll(-int(event.delta / 120), "units")
+        self._on_tag_wheel = _on_tag_wheel
+
+        self.tag_canvas.bind("<MouseWheel>", self._on_tag_wheel)
+        self.tag_inner.bind("<MouseWheel>", self._on_tag_wheel)
+
         board = Frame(self.root, bg=BG, padx=14)
         board.pack(fill="both", expand=True, pady=8)
         board.grid_rowconfigure(0, weight=1)
@@ -249,6 +266,11 @@ class TaskManager:
         if hasattr(self, "trash_can"):
             self.trash_can.set_active(active)
 
+    def _bind_tag_wheel(self, widget):
+        widget.bind("<MouseWheel>", self._on_tag_wheel)
+        for child in widget.winfo_children():
+            self._bind_tag_wheel(child)
+
     def _rebuild_tagbar(self):
         tags = self.store.all_tags()
         tag_signature = (tuple(tags), tuple(sorted(self.selected_tags)))
@@ -256,18 +278,31 @@ class TaskManager:
             return
         self._last_tag_signature = tag_signature
 
-        for widget in self.tagbar.winfo_children():
+        for widget in self.tag_inner.winfo_children():
             widget.destroy()
         self.filter_chips = []
         if not tags:
+            self.tag_canvas.pack_forget()
             return
-        Label(self.tagbar, text="Теги:", bg=BG, fg=MUTED,
-              font=self.font_small).pack(side="left", padx=8)
+
+        if not self.tag_canvas.winfo_ismapped():
+            self.tag_canvas.pack(fill="x", expand=True)
+
+        lbl = Label(self.tag_inner, text="Теги:", bg=BG, fg=MUTED,
+                    font=self.font_small)
+        lbl.pack(side="left", padx=(0, 8), pady=4)
+        self._bind_tag_wheel(lbl)
+
         for tag in tags:
-            chip = TagChip(self.tagbar, tag, self._toggle_filter_chip,
+            chip = TagChip(self.tag_inner, tag, self._toggle_filter_chip,
                            self.font_small, active=tag in self.selected_tags)
-            chip.pack(side="left", padx=5)
+            chip.pack(side="left", padx=5, pady=2)
             self.filter_chips.append(chip)
+            self._bind_tag_wheel(chip)
+
+        self.tag_inner.update_idletasks()
+        self.tag_canvas.configure(scrollregion=self.tag_canvas.bbox("all"))
+        self.tag_canvas.xview_moveto(0)
 
     def _toggle_filter_chip(self, chip):
         if chip.text in self.selected_tags:
@@ -410,7 +445,13 @@ class TaskManager:
             logger.info("Создание задачи отменено")
             return
         task = {"id": uuid.uuid4().hex, "created": time.time(), **dialog.result}
-        self.store.tasks.append(task)
+        other_tasks_of_status = [t for t in self.store.tasks if t["status"] == status]
+        if other_tasks_of_status:
+            first_task = other_tasks_of_status[0]
+            idx = self.store.tasks.index(first_task)
+            self.store.tasks.insert(idx, task)
+        else:
+            self.store.tasks.append(task)
         self.store.save()
         self.refresh()
         logger.info("Создана задача «%s» (id=%s)", task["title"], task["id"])
@@ -524,14 +565,11 @@ class TaskManager:
         """Возвращает курсор на ту же кнопку после перерисовки колонки."""
         if not (button and button.winfo_exists()):
             return
-
         self._reveal_button(button)
-
         try:
             button.update_idletasks()
         except tk.TclError:
             return
-
         self._teleport_cursor(button)
 
     def _reveal_button(self, button):
@@ -539,27 +577,21 @@ class TaskManager:
         col = self._column_of_button(button)
         if col is None:
             return
-
         try:
             box = col.canvas.bbox("all")
             if box is None:
                 return
         except tk.TclError:
             return
-
         content_h = max(0, box[3] - box[1])
         viewport_h = col.canvas.winfo_height()
-
         if content_h <= viewport_h:
             return
-
         rel_y = button.winfo_rooty() - col.canvas.winfo_rooty() + button.winfo_height() // 2
-
         try:
             center_y = col.canvas.canvasy(rel_y)
         except tk.TclError:
             return
-
         top = (center_y - box[1] - viewport_h / 2) / max(1, content_h - viewport_h)
         col.canvas.yview_moveto(max(0.0, min(1.0, top)))
 
@@ -567,7 +599,6 @@ class TaskManager:
         """Телепортирует курсор мыши в центр виджета (только Windows)."""
         if os.name != "nt":
             return
-
         try:
             import ctypes
             x = widget.winfo_rootx() + widget.winfo_width() // 2
