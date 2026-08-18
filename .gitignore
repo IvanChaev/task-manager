@@ -25,8 +25,6 @@ MANIFEST
 # Application data & runtime files
 logs/
 *.pid
-tasks.json
-tasks.json.bak
 settings.json
 *.bak
 
